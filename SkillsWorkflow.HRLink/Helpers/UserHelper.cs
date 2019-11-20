@@ -5,6 +5,7 @@ using SkillsWorkflow.HrLink.Interfaces;
 using SkillsWorkflow.Integration.Api.Models;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Net.Http;
 using System.Net;
@@ -24,13 +25,13 @@ namespace SkillsWorkflow.HrLink.Helpers
             return await response.Content.ReadAsJsonAsync<DepartmentDto>();
         }
 
-        private static async Task<EmployeeDto> SaveEmployeeAsync(HttpClient httpClient, Dto.CompanyDto company, long externalId, string userName, bool active, string progressMessage, List<MailBodyDto> mailBodyList)
+        private static async Task<EmployeeDto> SaveEmployeeAsync(HttpClient httpClient, Dto.CompanyDto company, string externalId, string userName, bool active, string progressMessage, List<MailBodyDto> mailBodyList)
         {
             EmployeeModel model = new EmployeeModel
             {
                 CompanyId = company.CompanyId,
                 CompanyCode = company.Code,
-                ExternalId = externalId.ToString(),
+                ExternalId = externalId,
                 Name = userName,
                 IsActive = active
             };
@@ -47,7 +48,7 @@ namespace SkillsWorkflow.HrLink.Helpers
             return null;
         }
 
-        private static async Task<Integration.Api.Models.UserTypologyDto> GetUserTypologyAsync(HttpClient httpClient, Guid departmentId, string externalId)
+        private static async Task<UserTypologyDto> GetUserTypologyAsync(HttpClient httpClient, Guid departmentId, string externalId)
         {
             var response = await httpClient.GetAsync($"/api/departments/{departmentId}/usertypologies/external?externalId={HttpUtility.UrlEncode(externalId)}");
             if (!response.IsSuccessStatusCode) return null;
@@ -112,15 +113,14 @@ namespace SkillsWorkflow.HrLink.Helpers
             return saveUserTypology;
         }
 
-
-
-        private static async Task<UserDto> SaveUserAsync(HttpClient httpClient, Dto.CompanyDto company, long externalId, string userName, bool isActive, Person person, JobDataWithComp job, Guid employeeId, string progressMessage, List<MailBodyDto> mailBodyList)
+        private static async Task<UserDto> SaveUserAsync(HttpClient httpClient, Dto.CompanyDto company, Guid userId, string externalId, string userName, bool isActive, Person person, JobDataWithComp job, Guid employeeId, string progressMessage, List<MailBodyDto> mailBodyList)
         {
             UserModel model = new UserModel
             {
+                Id = userId,
                 Name = userName,
                 UserName = userName,
-                ExternalId = externalId.ToString(),
+                ExternalId = externalId,
                 CompanyId = company.CompanyId,
                 CompanyCode = company.Code,
                 EmployeeId = employeeId,
@@ -132,16 +132,16 @@ namespace SkillsWorkflow.HrLink.Helpers
             };            
             if (!string.IsNullOrEmpty(job.Job.HireDt.Text))
                 model.HireDate = Convert.ToDateTime(job.Job.HireDt.Text);
-        //public string SsoUserName { get; set; }
-        //public bool SsoUserNameUpdatable { get; set; }
-        //public DateTime? ExpirationDate { get; set; }
-        //public double RequiredWeeklyHours { get; set; }
-        //public double RequiredHours { get; set; }
-        //public Guid ResponsibleId { get; set; }
-        //public Guid UserTypeId { get; set; }
-        //public double WeeklyOvertimeThresholdHours { get; set; }
-        //public bool ExternalNumberUpdatable { get; set; }
-        //public string ExternalNumber { get; set; }
+            //public string SsoUserName { get; set; }
+            //public bool SsoUserNameUpdatable { get; set; }
+            //public DateTime? ExpirationDate { get; set; }
+            //public double RequiredWeeklyHours { get; set; }
+            //public double RequiredHours { get; set; }
+            //public Guid ResponsibleId { get; set; }
+            //public Guid UserTypeId { get; set; }
+            //public double WeeklyOvertimeThresholdHours { get; set; }
+            //public bool ExternalNumberUpdatable { get; set; }
+            //public string ExternalNumber { get; set; }
             HttpContent contentPost = new StringContent(JsonConvert.SerializeObject(model), Encoding.UTF8, "application/json");
             var response = await httpClient.PostAsync("/api/users", contentPost);
             if (response.IsSuccessStatusCode)
@@ -155,12 +155,41 @@ namespace SkillsWorkflow.HrLink.Helpers
             return null;
         }
 
+        private async Task<List<DocumentUserFieldValueDto>> GetUserIdByHrLinkIdAsync(HttpClient httpClient, string userExternalId)
+        {
+            var columnName = HttpUtility.UrlEncode("HRLinkId");
+            var response = await httpClient.GetAsync($"/api/documentUserFieldValues/values?documentTypeName=User&columnName={columnName}&value={HttpUtility.UrlEncode(userExternalId)}&valueType=" + (int)ColumnDataType.Varchar50);
+            if (response.StatusCode == HttpStatusCode.NotFound) return new List<DocumentUserFieldValueDto>();
+            if (response.StatusCode == HttpStatusCode.BadRequest) return new List<DocumentUserFieldValueDto>();
+            return await response.Content.ReadAsJsonAsync<List<DocumentUserFieldValueDto>>();
+        }
+
+        private async Task<UserDto> GetUserAsync(HttpClient httpClient, Guid userId)
+        {
+            var response = await httpClient.GetAsync($"/api/users/{userId}");
+            if (response.StatusCode == HttpStatusCode.NotFound) return null;
+            if (response.StatusCode == HttpStatusCode.BadRequest) return null;
+            return await response.Content.ReadAsJsonAsync<UserDto>();
+        }
+
+        private async Task SaveDocumentUserFieldValueAsync(HttpClient httpClient, Dto.CompanyDto companyDto, DocumentUserFieldValueBatchPutModel model, string progressMessage)
+        {
+            HttpContent contentPost = new StringContent(JsonConvert.SerializeObject(model), Encoding.UTF8, "application/json");
+            var response = await httpClient.PutAsync("/api/documentUserFieldValues", contentPost);
+            if (response.IsSuccessStatusCode)
+            {
+                await ApiHelper.SaveLogAsync(httpClient, companyDto.Code, companyDto.CompanyId, Updater.MyStatusId, "Document User Fields", "", "-- Updated --", progressMessage, JsonConvert.SerializeObject(model));
+                return;
+            }
+            await ApiHelper.SaveLogAsync(httpClient, companyDto.Code, companyDto.CompanyId, Updater.MyStatusId, "Document User Fields", "", response.Content.ReadAsStringAsync().Result, progressMessage, JsonConvert.SerializeObject(model));
+        }
+
 
         public async Task<JobDataResponse> GetJobDataAsync(ApiDto apiDto, Dto.CompanyDto company, List<MailBodyDto> mailBodyList)
         {
             var httpClient = HttpClientHelper.Get(apiDto);
             string body = "";
-            string uriString = company.JobWithCompensationUrl + $"?REQUESTOR={HttpUtility.UrlEncode(company.Requestor)}&PASSWORD={HttpUtility.UrlEncode(company.Password)}";
+            string uriString = company.JobWithCompensationUrl + $"?REQUESTOR={HttpUtility.UrlEncode(company.Requestor)}&PASSWORD={HttpUtility.UrlEncode(company.Password)}&COMPANY={HttpUtility.UrlEncode(company.ExternalCode)}";
             HttpRequestMessage request = new HttpRequestMessage
             {
                 Method = new HttpMethod("POST"),
@@ -182,7 +211,7 @@ namespace SkillsWorkflow.HrLink.Helpers
         {
             var httpClient = HttpClientHelper.Get(apiDto);
             string body = "";
-            string uriString = company.PersonalDataUrl + $"?REQUESTOR={HttpUtility.UrlEncode(company.Requestor)}&PASSWORD={HttpUtility.UrlEncode(company.Password)}";
+            string uriString = company.PersonalDataUrl + $"?REQUESTOR={HttpUtility.UrlEncode(company.Requestor)}&PASSWORD={HttpUtility.UrlEncode(company.Password)}&COMPANY={HttpUtility.UrlEncode(company.ExternalCode)}";
             HttpRequestMessage request = new HttpRequestMessage
             {
                 Method = new HttpMethod("POST"),
@@ -200,32 +229,47 @@ namespace SkillsWorkflow.HrLink.Helpers
             return null;
         }
 
-        public async Task<bool> ImportAsync(ApiDto apiDto, Dto.CompanyDto company, PersonalDataResponse personalData, JobDataResponse jobData, List<MailBodyDto> mailBodyList)
+        public async Task<bool> ImportAsync(ApiDto api, Dto.CompanyDto company, PersonalDataResponse personalData, JobDataResponse jobData, List<MailBodyDto> mailBodyList)
         {
             var persons = personalData == null ? new List<Person>() : personalData.SoapenvEnvelope.Body.ApiVersionPersons.Persons.ToList();            
             var jobs = jobData == null ? new List<JobDataWithComp>() : jobData.SoapenvEnvelope.Body.ApiVersionJobs.JobDataWithCompList.ToList();
             int count = 1;
-            var httpClient = HttpClientHelper.Get(apiDto);
+            var httpClient = HttpClientHelper.Get(api);
             var imported = true;
             foreach (var person in persons)
             {
                 var progressMessage = $"Importing {count++} of {persons.Count}.";
-                var externalId = person.Emplid.Text;
+                var userId = Guid.Empty;
+                var externalId = person.Emplid.Text.ToString();
                 var userName = person.SubNames.NameDisplay.Text;
-                var job = jobs.FirstOrDefault(j => j.Job.Emplid.Text == externalId);
+                var job = jobs.FirstOrDefault(j => j.Job.Emplid.Text.ToString(CultureInfo.InvariantCulture) == externalId);
                 if(job == null)
                 {
-                    await LogHelper.SaveLogAsync(apiDto, company.Code, company.CompanyId, Updater.MyStatusId, "User", userName, $"-- Not Imported - Job data must exists for employeeid {externalId} --", progressMessage, JsonConvert.SerializeObject(person));
+                    await LogHelper.SaveLogAsync(httpClient, company.Code, company.CompanyId, Updater.MyStatusId, "User", userName, $"-- Not Imported - Job data must exists for employeeid {externalId} --", progressMessage, JsonConvert.SerializeObject(person));
                     imported = false;
                     continue;
                 }
                 var department = await GetDepartmentAsync(httpClient, company.CompanyId, job.Department.Deptid.Text);
                 if (department == null)
                 {
-                    await ApiHelper.SaveLogAsync(apiDto, company.Code, company.CompanyId, Updater.MyStatusId, "User", userName, $"Department does not exists for external id {job.Department.Deptid.Text}.", progressMessage, JsonConvert.SerializeObject(person));
+                    await ApiHelper.SaveLogAsync(httpClient, company.Code, company.CompanyId, Updater.MyStatusId, "User", userName, $"Department does not exists for external id {job.Department.Deptid.Text}.", progressMessage, JsonConvert.SerializeObject(person));
                     continue;
                 }
                 var isActive = job.Job.EmplStatus.Text == "A";
+                var documentUserFieldValueDtos = await GetUserIdByHrLinkIdAsync(httpClient, person.Emplid.Text.ToString());
+                if (documentUserFieldValueDtos.Count > 1)
+                {
+                    await ApiHelper.SaveLogAsync(httpClient, company.Code, company.CompanyId, Updater.MyStatusId, "User", userName, $"Exists several users with {person.Emplid.Text} HRLinkID.", progressMessage, JsonConvert.SerializeObject(person));
+                    return false;
+                }
+                if (documentUserFieldValueDtos.Count == 1)
+                {
+                    var user = await GetUserAsync(httpClient, documentUserFieldValueDtos[0].DocumentId);
+                    externalId = user.ExternalId;
+                    userId = user.Id;
+                }
+                else
+                    externalId = (externalId.Length == 10 && externalId.Substring(2, 2) == "00") ? externalId.Remove(2, 2) : externalId;
                 var employeeDto = await SaveEmployeeAsync(httpClient, company, externalId, userName, isActive, progressMessage, mailBodyList);
                 if (employeeDto == null)
                 {
@@ -238,12 +282,20 @@ namespace SkillsWorkflow.HrLink.Helpers
                     imported = false;
                     continue;
                 }
-                var savedUserDto = await SaveUserAsync(httpClient, company, externalId, userName, isActive, person, job, employeeDto.Id, progressMessage, mailBodyList);
+                var savedUserDto = await SaveUserAsync(httpClient, company, userId, externalId, userName, isActive, person, job, employeeDto.Id, progressMessage, mailBodyList);
                 if (savedUserDto == null)
                 {
                     imported = false;
                     continue;
                 }
+                var documentUserFieldValueBatchPutModel = new DocumentUserFieldValueBatchPutModel
+                {
+                    DocumentId = savedUserDto.Id,
+                    DocumentTypeName = "User",
+                    DocumentUserFieldValues = new List<DocumentUserFieldValue>()
+                };
+                documentUserFieldValueBatchPutModel.DocumentUserFieldValues.Add(new DocumentUserFieldValue { ColumnName = "HRLinkId", Value = person.Emplid.Text.ToString(), ColumnDataTypeId = (int)ColumnDataType.Varchar50 });
+                await SaveDocumentUserFieldValueAsync(httpClient, company, documentUserFieldValueBatchPutModel, progressMessage);
             }
             return imported;
         }

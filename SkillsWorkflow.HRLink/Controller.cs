@@ -51,12 +51,17 @@ namespace SkillsWorkflow.HrLink
 
         private async Task ImportUsersAsync(List<TenantCompaniesDto> tenantCompanies, List<MailBodyDto> mailBodyList)
         {
-            Console.WriteLine("Importing Clients and Products.");
-            var defaultTenant = tenantCompanies.First();
-            var defaultCompany = tenantCompanies.First().Companies.First();
-            var personalData = await _userHelper.GetPersonalDataAsync(defaultTenant.Api, defaultCompany, mailBodyList);
-            var jobData = await _userHelper.GetJobDataAsync(defaultTenant.Api, defaultCompany, mailBodyList);
-            var imported = await _userHelper.ImportAsync(defaultTenant.Api, defaultCompany, personalData, jobData, mailBodyList);
+            Console.WriteLine("Importing Users.");
+            foreach (var tenantCompany in tenantCompanies)
+                foreach(var company in tenantCompany.Companies)
+                {
+                    Console.WriteLine("GetPersonalDataAsync from " + company.Code);
+                    var personalData = await _userHelper.GetPersonalDataAsync(tenantCompany.Api, company, mailBodyList);
+                    Console.WriteLine("GetJobDataAsync from " + company.Code);
+                    var jobData = await _userHelper.GetJobDataAsync(tenantCompany.Api, company, mailBodyList);
+                    Console.WriteLine("ImportAsync users from " + company.Code);
+                    await _userHelper.ImportAsync(tenantCompany.Api, company, personalData, jobData, mailBodyList);
+                }
         }
 
         private async Task SendEmailAsync(List<MailBodyDto> mailBodyList, ContextDto context, string companyCode, string companyAdministratorMail)
@@ -116,14 +121,14 @@ namespace SkillsWorkflow.HrLink
             var tenantCompanies = await GetTenantCompanies();
             if (tenantCompanies.Count == 0) return;
             PersonalDataResponse personalData = null;
-            using (StreamReader r = new StreamReader("C:\\Nextway - Settings\\HrLink\\Employee_response.json"))
+            using (StreamReader r = new StreamReader("C:\\Test\\HrLink\\Employee_response.json"))
             {
                 string json = r.ReadToEnd();
                 personalData = JsonConvert.DeserializeObject<PersonalDataResponse>(json);
                 //var persons = personalDataResponse.SoapenvEnvelope.Body.ApiVersionPersons.Persons;
             }
             JobDataResponse jobData = null;
-            using (StreamReader r = new StreamReader("C:\\Nextway - Settings\\HrLink\\Job_response.json"))
+            using (StreamReader r = new StreamReader("C:\\Test\\HRLink\\Job_response.json"))
             {
                 string json = r.ReadToEnd();
                 jobData = JsonConvert.DeserializeObject<JobDataResponse>(json);

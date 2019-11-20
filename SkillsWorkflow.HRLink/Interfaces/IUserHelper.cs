@@ -9,6 +9,6 @@ namespace SkillsWorkflow.HrLink.Interfaces
     {
         Task<PersonalDataResponse> GetPersonalDataAsync(ApiDto apiDto, CompanyDto company, List<MailBodyDto> mailBodyList);
         Task<JobDataResponse> GetJobDataAsync(ApiDto apiDto, CompanyDto company, List<MailBodyDto> mailBodyList);
-        Task<bool> ImportAsync(ApiDto apiDto, CompanyDto company, PersonalDataResponse personalData, JobDataResponse jobData, List<MailBodyDto> mailBodyList);
+        Task<bool> ImportAsync(ApiDto api, Dto.CompanyDto company, PersonalDataResponse personalData, JobDataResponse jobData, List<MailBodyDto> mailBodyList);
     }
 }

@@ -5,14 +5,13 @@ using System.Text;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using SkillsWorkflow.Common;
-using SkillsWorkflow.HrLink.Helpers;
 using SkillsWorkflow.Integration.Api.Models;
 
 namespace SkillsWorkflow.HrLink
 {
     public static class Updater
     {
-        public static string MyVersion => "1.0.0.1";
+        public static string MyVersion => "1.0.0.3";
         public static int MyStatusId => 17;
 
         #region Integrator
@@ -62,6 +61,7 @@ namespace SkillsWorkflow.HrLink
             externalTable.Columns.Add(new ExternalTableColumnModel { ColumnName = "Password", ColumnDataTypeId = (int)ColumnDataType.Varchar100 });
             externalTable.Columns.Add(new ExternalTableColumnModel { ColumnName = "AccessToken", ColumnDataTypeId = (int)ColumnDataType.Varchar100 });
             externalTable.Columns.Add(new ExternalTableColumnModel { ColumnName = "ApiKey", ColumnDataTypeId = (int)ColumnDataType.Varchar100 });
+            externalTable.Columns.Add(new ExternalTableColumnModel { ColumnName = "Code", ColumnDataTypeId = (int)ColumnDataType.Varchar100 });
             return externalTable;
         }
 
@@ -79,7 +79,8 @@ namespace SkillsWorkflow.HrLink
                         x.Requestor, 
                         x.Password,                         
                         x.AccessToken,
-                        x.ApiKey
+                        x.ApiKey,
+                        x.Code as ExternalCode
                 from    Company c, CompanyIntegration ci, HrLinkCompany x
                 where	x.Company = ci.Company
                         and ci.IntegrationType = 17
@@ -104,6 +105,7 @@ namespace SkillsWorkflow.HrLink
                 var integratorDto = await GetIntegratorAsync(httpClient, MyStatusId);
                 if (integratorDto != null && integratorDto.Version == MyVersion) return;
                 await ExternalTableHelper.PostAsync(httpClient, "HrLinkCompany", GetExternalTablePostModel());
+                await DocumentUserFieldHelper.PostAsync(httpClient, "Skill.Module.BusinessObjects.User", "HRLinkId", (int)ColumnDataType.Varchar50);
                 await DatabaseHelper.RecreateViewsAsync(httpClient, GetSkillsWorkflowIntegrationHrLinkCompanies());                
                 if (!await DatabaseHelper.ExistsViewAsync(apiDto, "SkillsWorkflowIntegrationHrLinkCompanies")) throw new Exception("View SkillsWorkflowIntegrationHrLinkCompanies not created.");                
                 await PostIntegratorAsync(httpClient);
